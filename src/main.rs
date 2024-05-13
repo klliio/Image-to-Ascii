@@ -1,6 +1,7 @@
 use clap::Parser;
 use image::{self, imageops::FilterType::Nearest, DynamicImage, GenericImageView, Pixel};
 use std::path::PathBuf;
+use termsize;
 
 // Ascii to image converter
 #[derive(Parser, Debug)]
@@ -15,7 +16,7 @@ struct Args {
     constrast: i8,
 
     // Scale% [0 - 255]
-    #[arg(short, long, default_value_t = 100)]
+    #[arg(short, long, default_value_t = 0)]
     scale: u8,
 }
 
@@ -25,12 +26,18 @@ fn main() {
         .unwrap()
         .adjust_contrast(f32::from(args.constrast));
 
-    if args.scale != 100 {
+    if args.scale == 0 {
+        println!("cols: {}\nrows: {}", termsize::get().unwrap().cols, termsize::get().unwrap().rows);
+        println!("width: {}\nheight: {}", image.width(), image.height());
+        let n_width: u32 = u32::from(termsize::get().unwrap().cols);
+        let n_height: u32 = u32::from(termsize::get().unwrap().rows);
+        image = image.resize(n_width, n_height, Nearest);
+        println!("width: {}\nheight: {}", image.width(), image.height());
+    } else if args.scale != 0 {
         let n_width: u32 =
             (f64::from(image.width()) * (f64::from(args.scale) / 100.0)).round() as u32;
         let n_height: u32 =
             (f64::from(image.height()) * (f64::from(args.scale) / 100.0)).round() as u32;
-
         image = image.resize(n_width, n_height, Nearest);
     }
 
