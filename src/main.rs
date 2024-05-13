@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-// Ascii to image converter
+// Image to Ascii converter
 #[derive(Parser, Debug)]
 #[command(author = "klliio", version, about, long_about = None, arg_required_else_help = true)]
 struct Args {
