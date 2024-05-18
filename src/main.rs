@@ -56,44 +56,74 @@ fn main() {
         image = image.resize(n_width, n_height, Nearest);
     }
 
-    if let Err(error) = output(image, args.colour, args.no_bg) {
-        eprintln!("{}", error);
-    }
+    process_pixel(image, args.colour, args.no_bg)
 }
 
-fn output(image: DynamicImage, colour: bool, no_bg: bool) -> Result<(), io::Error> {
+fn process_pixel(image: DynamicImage, colour: bool, no_bg: bool) {
     let characters: [char; 17] = [
         '$', '#', 'B', '%', '*', 'o', 'c', ';', ':', '<', '~', '^', '"', '\'', ',', '.', ' ',
     ];
 
+    let mut buffer_chars: Vec<Vec<char>> = vec![];
+    let mut buffer_colours: Vec<Vec<image::Rgba<u8>>> = vec![];
+
+    let mut row: u32 = 0;
+    while row < image.height() {
+        let mut column: u32 = 0;
+        let mut row_chars: Vec<char> = vec![];
+        let mut row_colours: Vec<image::Rgba<u8>> = vec![];
+
+        while column < image.width() {
+            let pix = image.get_pixel(column, row);
+            let luma = pix.to_luma()[0];
+
+            let mut rgba = image::Rgba([255, 255, 255, pix.0[3]]);
+            if colour {
+                rgba = pix.to_rgba();
+            }
+
+            row_colours.push(rgba);
+            row_chars.push(
+                characters[((255 - luma) / u8::try_from(characters.len()).unwrap()) as usize],
+            );
+
+            column += 1;
+        }
+
+        buffer_colours.push(row_colours);
+        buffer_chars.push(row_chars);
+        row += 1;
+    }
+
+    if let Err(error) = output(buffer_chars, buffer_colours) {
+        eprintln!("{}", error);
+    }
+}
+
+fn output(
+    buffer_chars: Vec<Vec<char>>,
+    buffer_colours: Vec<Vec<image::Rgba<u8>>>,
+) -> Result<(), io::Error> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
 
-    let mut i = 1;
-    for pix in image.pixels() {
-        let luma = pix.2.to_luma()[0];
-
-        let alpha: u8 = pix.2[3];
-        let mut rgb = image::Rgb([255, 255, 255]);
-        if colour {
-            rgb = pix.2.to_rgb();
+    for row in buffer_chars.iter().enumerate() {
+        for row_char in row.1.iter().enumerate() {
+            if buffer_colours[row.0][row_char.0][3] == 0 {
+                write!(stdout, "  ");
+            } else {
+                write!(
+                    stdout,
+                    "{} ",
+                    row_char.1.if_supports_color(Stdout, |text| text.truecolor(
+                        buffer_colours[row.0][row_char.0][0],
+                        buffer_colours[row.0][row_char.0][1],
+                        buffer_colours[row.0][row_char.0][2]
+                    ))
+                );
+            }
         }
-
-        if (alpha == 0) && (no_bg) {
-            write!(stdout, "  ",);
-        } else {
-            write!(
-                stdout,
-                "{} ",
-                characters[((255 - luma) / u8::try_from(characters.len()).unwrap()) as usize]
-                    .if_supports_color(Stdout, |text| text.truecolor(rgb[0], rgb[1], rgb[2]))
-            );
-        }
-
-        if (i % image.width()) == 0 {
-            write!(stdout, "\n",);
-        }
-        i += 1;
+        write!(stdout, "\n ");
     }
 
     Ok(())
