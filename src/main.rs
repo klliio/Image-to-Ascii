@@ -95,7 +95,7 @@ fn process_pixel(image: DynamicImage, colour: bool, no_bg: bool) {
         row += 1;
     }
 
-    if let Err(error) = output(buffer_chars, buffer_colours) {
+    if let Err(error) = output(buffer_chars, buffer_colours, no_bg) {
         eprintln!("{}", error);
     }
 }
@@ -103,13 +103,14 @@ fn process_pixel(image: DynamicImage, colour: bool, no_bg: bool) {
 fn output(
     buffer_chars: Vec<Vec<char>>,
     buffer_colours: Vec<Vec<image::Rgba<u8>>>,
+    no_bg: bool,
 ) -> Result<(), io::Error> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
 
     for row in buffer_chars.iter().enumerate() {
         for row_char in row.1.iter().enumerate() {
-            if buffer_colours[row.0][row_char.0][3] == 0 {
+            if (buffer_colours[row.0][row_char.0][3] == 0) && no_bg {
                 write!(stdout, "  ");
             } else {
                 write!(
