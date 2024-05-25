@@ -1,4 +1,5 @@
 use clap::{error::Result, Parser};
+use core::panic;
 use image::{self, imageops::FilterType::Nearest, DynamicImage, GenericImageView, Pixel};
 use owo_colors::{OwoColorize, Stream::Stdout};
 use std::{
@@ -56,75 +57,85 @@ fn main() {
         image = image.resize(n_width, n_height, Nearest);
     }
 
-    process_pixel(image, args.colour, args.no_bg)
+    // handle if the total pixels is greater than u32 can hold
+    if image.width().checked_mul(image.height()).is_none() {
+        panic!("u32 overflow, Image too large");
+    }
+
+    let image_info: (Vec<char>, Vec<image::Rgba<u8>>) = process(&image, &args.colour, &args.no_bg);
+
+    if let Err(error) = output(&image_info.0, &image_info.1, &image.width()) {
+        eprintln!("{}", error);
+    }
 }
 
-fn process_pixel(image: DynamicImage, colour: bool, no_bg: bool) {
+fn process(image: &DynamicImage, colour: &bool, no_bg: &bool) -> (Vec<char>, Vec<image::Rgba<u8>>) {
     let characters: [char; 17] = [
         '$', '#', 'B', '%', '*', 'o', 'c', ';', ':', '<', '~', '^', '"', '\'', ',', '.', ' ',
     ];
 
-    let mut buffer_chars: Vec<Vec<char>> = vec![];
-    let mut buffer_colours: Vec<Vec<image::Rgba<u8>>> = vec![];
+    let mut char_vec: Vec<char> = vec![];
+    let mut colour_vec: Vec<image::Rgba<u8>> = vec![];
 
     let mut row: u32 = 0;
     while row < image.height() {
         let mut column: u32 = 0;
-        let mut row_chars: Vec<char> = vec![];
-        let mut row_colours: Vec<image::Rgba<u8>> = vec![];
 
         while column < image.width() {
             let pix = image.get_pixel(column, row);
             let luma = pix.to_luma()[0];
 
-            let mut rgba = image::Rgba([255, 255, 255, pix.0[3]]);
-            if colour {
-                rgba = pix.to_rgba();
-            }
+            let alpha: u8 = if *no_bg { 0 } else { pix.0[3] };
+            let rgba: image::Rgba<u8> = {
+                if *colour {
+                    pix.to_rgba()
+                } else {
+                    image::Rgba([255, 255, 255, alpha])
+                }
+            };
 
-            row_colours.push(rgba);
-            row_chars.push(
+            colour_vec.push(rgba);
+            char_vec.push(
                 characters[((255 - luma) / u8::try_from(characters.len()).unwrap()) as usize],
             );
 
             column += 1;
         }
 
-        buffer_colours.push(row_colours);
-        buffer_chars.push(row_chars);
         row += 1;
     }
 
-    if let Err(error) = output(buffer_chars, buffer_colours, no_bg) {
-        eprintln!("{}", error);
-    }
+    (char_vec, colour_vec)
 }
 
 fn output(
-    buffer_chars: Vec<Vec<char>>,
-    buffer_colours: Vec<Vec<image::Rgba<u8>>>,
-    no_bg: bool,
+    char_vec: &[char],
+    colour_vec: &[image::Rgba<u8>],
+    width: &u32,
 ) -> Result<(), io::Error> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
 
-    for row in buffer_chars.iter().enumerate() {
-        for row_char in row.1.iter().enumerate() {
-            if (buffer_colours[row.0][row_char.0][3] == 0) && no_bg {
-                write!(stdout, "  ");
-            } else {
-                write!(
-                    stdout,
-                    "{} ",
-                    row_char.1.if_supports_color(Stdout, |text| text.truecolor(
-                        buffer_colours[row.0][row_char.0][0],
-                        buffer_colours[row.0][row_char.0][1],
-                        buffer_colours[row.0][row_char.0][2]
-                    ))
-                );
-            }
+    for char in char_vec.iter().enumerate() {
+        if colour_vec[char.0][3] == 0 {
+            write!(stdout, "  ");
+        } else {
+            write!(
+                stdout,
+                "{} ",
+                char.1.if_supports_color(Stdout, |text| text.truecolor(
+                    colour_vec[char.0][0],
+                    colour_vec[char.0][1],
+                    colour_vec[char.0][2]
+                ))
+            );
         }
-        write!(stdout, "\n ");
+
+        if u32::try_from(char.0).expect("Unable to convert to u32. The Image too large.") % width
+            == 0
+        {
+            write!(stdout, "\n");
+        }
     }
 
     Ok(())
